@@ -15,7 +15,8 @@ from callback_logging import CSVLoggerCallback
 import os
 import re
 
-from Chess_Environment import ChessEnv
+#from Chess_Environment import ChessEnv
+from random_play_environment_implementation import RandomOpponentChessEnv
 from action_mapping    import move_to_index
 
 # Build mask_fn for legal moves
@@ -35,7 +36,7 @@ def main():
     print("Using device:", device)
 
     # Instantiate and wrap env
-    base_env = ChessEnv()
+    base_env = RandomOpponentChessEnv()
     env      = ActionMasker(base_env, mask_fn)
 
     checkpoint_path = "models/chess_ppo_22200000_steps.zip"
