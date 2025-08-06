@@ -52,7 +52,7 @@ def main():
         model = MaskablePPO(
             MaskableActorCriticPolicy,
             env,
-            nt_coef=0.02, #wanted to promote more exploration
+            ent_coef=0.02, #wanted to promote more exploration
             verbose=1,
             tensorboard_log="runs/chess_gpu",
             device=device,
