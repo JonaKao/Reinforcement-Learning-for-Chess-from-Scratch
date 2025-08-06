@@ -39,7 +39,7 @@ def main():
     base_env = RandomOpponentChessEnv()
     env      = ActionMasker(base_env, mask_fn)
 
-    checkpoint_path = "models/chess_ppo_22200000_steps.zip"
+    checkpoint_path = "models/chess_ppo_28600000_steps.zip"
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint: {checkpoint_path}")
         model = MaskablePPO.load(
