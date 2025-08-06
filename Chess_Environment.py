@@ -46,7 +46,7 @@ class ChessEnv(gym.Env):
             self.starting_color = "white"
         self.done = False
 
-        num_opening_moves = random.randint(4, 10)  # e.g., 2 to 6 random moves (that's what it was intially, after another episode of consistent wins at low move counts, I decided to increase it)
+        num_opening_moves = random.randint(4, 10)  # e.g., 2 to 6 random moves (that's what it was intially, after another episode of consistent wins at low move counts (circa 20M mark), I decided to increase it)
         for _ in range(num_opening_moves):
             legal_moves = list(self.board.legal_moves)
             if not legal_moves or self.board.is_game_over():
