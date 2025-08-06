@@ -1,0 +1,6 @@
+venv/
+venv_old/
+models/
+runs\chess_gpu/
+runs/
+pycache/
