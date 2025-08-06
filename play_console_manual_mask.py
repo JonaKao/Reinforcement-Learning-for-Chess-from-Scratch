@@ -7,8 +7,8 @@ import torch
 from stable_baselines3.common.vec_env import DummyVecEnv
 from sb3_contrib import MaskablePPO
 
-from Chess_Environment import ChessEnv      # your env
-from action_mapping    import move_to_index # your mapping
+from Chess_Environment import ChessEnv      # my env
+from action_mapping    import move_to_index # my mapping
 
 def make_env():
     return ChessEnv()
@@ -17,7 +17,7 @@ def main():
     # 1) wrap env so we can load it into the model
     vec_env = DummyVecEnv([make_env])
 
-    # 2) load your trained PPO (no mask argument!)
+    # 2) load trained PPO (no mask argument!)
     model = MaskablePPO.load("models/chess_ppo_18400000_steps", env=vec_env, device="cpu")
 
     # 3) grab the raw env for board & legal‐move info
