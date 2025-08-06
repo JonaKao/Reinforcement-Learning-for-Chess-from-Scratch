@@ -16,7 +16,6 @@ import os
 import re
 
 #from Chess_Environment import ChessEnv
-from random_play_environment_implementation import RandomOpponentChessEnv
 from action_mapping    import move_to_index
 
 # Build mask_fn for legal moves
@@ -36,7 +35,7 @@ def main():
     print("Using device:", device)
 
     # Instantiate and wrap env
-    base_env = RandomOpponentChessEnv()
+    base_env = ChessEnv()
     env      = ActionMasker(base_env, mask_fn)
 
     checkpoint_path = "models/chess_ppo_28600000_steps.zip"
