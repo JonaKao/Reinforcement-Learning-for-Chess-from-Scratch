@@ -34,7 +34,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Using device:", device)
 
-    # Instantiate and wrap your env
+    # Instantiate and wrap env
     base_env = ChessEnv()
     env      = ActionMasker(base_env, mask_fn)
 
