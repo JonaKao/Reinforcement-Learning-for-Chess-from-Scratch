@@ -19,7 +19,7 @@ PIECE_VALUES = {
 class ChessEnv(gym.Env):
     def __init__(
         self,
-        # Default to your installed Stockfish path; can be overridden by caller
+        # Default to installed Stockfish path; can be overridden by caller
         engine_path: str | None = r"C:\Tools\Stockfish\stockfish.exe",
         target_elo: int = 1000,
         think_time: float | None = 0.05,   # seconds per engine move
@@ -69,3 +69,4 @@ class ChessEnv(gym.Env):
 
     @property
     def action_mask(self):
+        return list(self.board.legal_moves)
