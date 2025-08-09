@@ -92,8 +92,8 @@ def main():
         think_time=0.0,
         nodes=None,
         randomize_start_color=True,
-        blunder_chance=0.60,
-        engine_nodes=5,
+        blunder_chance=0.90,
+        engine_nodes=3,
     )
     env = ActionMasker(base_env, mask_fn)
 
