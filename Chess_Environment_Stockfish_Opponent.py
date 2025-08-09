@@ -6,6 +6,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from action_mapping import index_to_move, move_to_index
 import shutil
+import random
 
 # capture shaping to reduce draws / encourage tactics
 PIECE_VALUES = {
@@ -22,8 +23,11 @@ class ChessEnv(gym.Env):
         engine_path: str | None = r"C:\Tools\Stockfish\stockfish.exe",
         target_elo: int = 1000,
         think_time: float | None = 0.05,
-        nodes: int | None = None,
+        nodes: int | None = None,             # legacy throttle (kept for compatibility)
         randomize_start_color: bool = True,
+        # NEW: handicaps to make Stockfish very weak
+        blunder_chance: float = 0.35,         # 35% of replies are random legal moves
+        engine_nodes: int | None = 12,        # tiny node cap for engine replies
     ):
         super().__init__()
         self.board = chess.Board()
@@ -41,6 +45,10 @@ class ChessEnv(gym.Env):
         self.randomize_start_color = randomize_start_color
         self.target_elo = target_elo
 
+        # NEW: handicap controls
+        self.blunder_chance = float(np.clip(blunder_chance, 0.0, 1.0))
+        self.engine_nodes = engine_nodes
+
         if self.engine_path is not None:
             resolved = shutil.which(self.engine_path) or self.engine_path
             try:
@@ -52,13 +60,14 @@ class ChessEnv(gym.Env):
                 except Exception:
                     pass
 
+                # Engine weakening baseline (Elo floor enforced by engine)
                 self.engine.configure({"UCI_LimitStrength": True})
                 min_elo, max_elo = 1320, 3600
                 elo = int(max(min(self.target_elo, max_elo), min_elo))
                 self.engine.configure({"UCI_Elo": elo})
 
-                skill = max(0, min(20, int((self.target_elo - 900) / 50)))
-                self.engine.configure({"Skill Level": skill})
+                # Force lowest skill level
+                self.engine.configure({"Skill Level": 0})
             except Exception as e:
                 print(
                     f"[ChessEnv] ERROR: Failed to start engine at '{resolved}': {e}. Running without opponent."
@@ -76,6 +85,7 @@ class ChessEnv(gym.Env):
         super().reset(seed=seed)
         self.board.reset()
 
+        # No random openings; optionally randomize which side the agent plays
         if self.randomize_start_color:
             if np.random.rand() < 0.5:
                 self.board.turn = chess.BLACK
@@ -131,24 +141,36 @@ class ChessEnv(gym.Env):
         return 0.0
 
     def _engine_reply(self, apply_reward: bool = True):
+        """Engine moves once. Returns incremental reward from opponent’s capture or terminal."""
         if self.engine is None or self.done or self.board.is_game_over():
             return 0.0
 
         pre_board = self.board.copy()
-        if self.nodes is not None:
-            limit = chess.engine.Limit(nodes=self.nodes)
-        elif self.think_time is not None:
-            limit = chess.engine.Limit(time=self.think_time)
-        else:
-            limit = chess.engine.Limit(time=0.05)
 
-        try:
-            result = self.engine.play(self.board, limit)
-            eng_move = result.move
-        except Exception as e:
-            print(f"[ChessEnv] Engine failed to move: {e}")
-            self.done = True
-            return -1.0
+        # --- Handicap 1: random blunders ---
+        if random.random() < self.blunder_chance:
+            legal = list(self.board.legal_moves)
+            if not legal:
+                return 0.0
+            eng_move = random.choice(legal)
+        else:
+            # --- Handicap 2: starve search with tiny node cap ---
+            if self.engine_nodes is not None:
+                limit = chess.engine.Limit(nodes=max(1, int(self.engine_nodes)))
+            elif self.nodes is not None:
+                limit = chess.engine.Limit(nodes=self.nodes)
+            elif self.think_time is not None:
+                limit = chess.engine.Limit(time=self.think_time)
+            else:
+                limit = chess.engine.Limit(nodes=8)
+
+            try:
+                result = self.engine.play(self.board, limit)
+                eng_move = result.move
+            except Exception as e:
+                print(f"[ChessEnv] Engine failed to move: {e}")
+                self.done = True
+                return -1.0
 
         opp_captured = pre_board.piece_at(eng_move.to_square)
         self.board.push(eng_move)
