@@ -29,17 +29,18 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Using device:", device)
 
-    # === NEW: play vs Stockfish (approx 1000 Elo) ===
-
+    # === Train vs Stockfish (no random openings) ===
     base_env = ChessEnv(
-        engine_path="C:\\Tools\\Stockfish\\stockfish.exe",   # <-- change if needed
+        engine_path=r"C:\Tools\Stockfish\stockfish.exe",   # change if needed
         target_elo=1000,           # requested strength (will be clamped internally)
         think_time=0.05,           # tiny time keeps it weak
         nodes=None,                # or set nodes=200 instead of think_time
-        random_opening_moves=(8, 10),
         randomize_start_color=True,
     )
     env = ActionMasker(base_env, mask_fn)
+
+    print(f"[train] Using engine path: {base_env.engine_path}")
+    print(f"[train] Engine active? {base_env.engine is not None}")
 
     checkpoint_path = "models/chess_ppo_33200000_steps.zip"
     if os.path.exists(checkpoint_path):

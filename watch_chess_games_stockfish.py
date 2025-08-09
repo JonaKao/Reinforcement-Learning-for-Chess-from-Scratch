@@ -15,7 +15,7 @@ from sb3_contrib.common.wrappers.action_masker import ActionMasker
 from sb3_contrib import MaskablePPO
 
 from Chess_Environment_Stockfish_Opponent import ChessEnv
-from action_mapping import index_to_move, move_to_index  # uses your existing mapping
+from action_mapping import index_to_move, move_to_index  #uses existing mapping
 
 def mask_fn(env) -> np.ndarray:
     mask = np.zeros(env.action_space.n, dtype=bool)
