@@ -12,7 +12,7 @@ from sb3_contrib.common.wrappers.action_masker import ActionMasker
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
-from callback_logging import CSVLoggerCallback
+from callback_logging import CSVLoggerCallback, TensorboardScalarsCallback
 import os
 from Chess_Environment_Stockfish_Opponent import ChessEnv
 from action_mapping import move_to_index
@@ -46,19 +46,26 @@ class CurriculumCallback(BaseCallback):
                 nd = self.env_ref.engine_nodes if self.env_ref.engine_nodes is not None else 8
                 tt = self.env_ref.think_time if self.env_ref.think_time is not None else 0.0
 
+                self.logger.record("custom/win_rate", win_rate)
+
+
                 if win_rate > self.win_upper:
                     # Make engine stronger: fewer blunders, more nodes; once no blunders, add time
                     if bc > 0.0:
                         new_bc = max(0.0, bc - 0.10)
                         self.env_ref.set_difficulty(blunder_chance=new_bc)
+                        event_msg = f"Win {win_rate:.2f}↑: blunder_chance {bc:.2f} -> {new_bc:.2f}"
                         print(f"[Curriculum] Win {win_rate:.2f} > {self.win_upper:.2f}: blunder_chance {bc:.2f} -> {new_bc:.2f}")
                     else:
                         new_tt = min(0.10, tt + 0.02)
                         self.env_ref.set_difficulty(think_time=new_tt)
+                        event_msg = f"Win {win_rate:.2f}↑: think_time {tt:.2f}s -> {new_tt:.2f}s"
                         print(f"[Curriculum] Win {win_rate:.2f} > {self.win_upper:.2f}: think_time {tt:.2f}s -> {new_tt:.2f}s")
 
                     new_nd = min(250, nd + 10)
                     self.env_ref.set_difficulty(engine_nodes=new_nd)
+                    event_msg += f", engine_nodes {nd} -> {new_nd}"
+                    self.logger.record_text("custom/curriculum_event", event_msg)
                     print(f"[Curriculum]             engine_nodes {nd} -> {new_nd}")
 
                     self.results.clear()
@@ -71,6 +78,10 @@ class CurriculumCallback(BaseCallback):
                     self.env_ref.set_difficulty(blunder_chance=new_bc, engine_nodes=new_nd, think_time=new_tt)
                     print(f"[Curriculum] Win {win_rate:.2f} < {self.win_lower:.2f}: "
                           f"blunder_chance {bc:.2f}->{new_bc:.2f}, engine_nodes {nd}->{new_nd}, think_time {tt:.2f}s->{new_tt:.2f}s")
+                    
+                    self.logger.record_text("custom/curriculum_event", event_msg)
+                    print(f"[Curriculum] {event_msg}")
+
                     self.results.clear()
         return True
 
@@ -119,6 +130,7 @@ def main():
         print("New model created! Current timesteps:", model.num_timesteps)
 
     csv_cb  = CSVLoggerCallback()
+    tb_cb   = TensorboardScalarsCallback(env_ref=base_env, eval_games=50)
     ckpt_cb = CheckpointCallback(save_freq=1_000_000, save_path="models/", name_prefix="chess_ppo")
     curriculum_cb = CurriculumCallback(env_ref=base_env, eval_games=150, win_upper=0.65, win_lower=0.35)
 
@@ -126,7 +138,7 @@ def main():
     model.learn(
         total_timesteps=model.num_timesteps + 3_000_000,
         reset_num_timesteps=False,
-        callback=[csv_cb, ckpt_cb, curriculum_cb]
+        callback=[csv_cb, tb_cb, ckpt_cb, curriculum_cb]
     )
 
     model.save(f"models/chess_ppo_final_{model.num_timesteps}_steps")

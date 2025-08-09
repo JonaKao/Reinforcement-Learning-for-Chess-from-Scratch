@@ -117,7 +117,7 @@ class ChessEnv(gym.Env):
     def _terminal_reward(self):
         if self.board.is_checkmate():
             winner_is_white = not self.board.turn
-            return 2.5 if winner_is_white == self._agent_was_white_last_move else -2.5
+            return 2.5 if winner_is_white == self._agent_was_white_last_move else -1.0
         if (self.board.is_stalemate() or self.board.is_insufficient_material()
             or self.board.can_claim_fifty_moves() or self.board.can_claim_threefold_repetition()):
             return -1.0
