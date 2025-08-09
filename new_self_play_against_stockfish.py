@@ -2,7 +2,6 @@ import numpy as np
 import torch
 import collections
 import chess
-# Monkey-patch to disable Categorical validation for maskable distribution
 import torch.distributions.categorical as _cat
 _original_cat_init = _cat.Categorical.__init__
 def _patched_cat_init(self, probs=None, logits=None, validate_args=None):
@@ -18,45 +17,63 @@ import os
 from Chess_Environment_Stockfish_Opponent import ChessEnv
 from action_mapping import move_to_index
 
-# ======= Curriculum Callback =======
+# ======= Curriculum Callback (blunder-first) =======
 class CurriculumCallback(BaseCallback):
-    def __init__(self, env_ref, eval_games=200, win_upper=0.65, win_lower=0.35, increment=0.02):
+    def __init__(self, env_ref, eval_games=150, win_upper=0.65, win_lower=0.35):
         super().__init__()
-        self.env_ref = env_ref  # Reference to base_env (not the wrapper)
+        self.env_ref = env_ref
         self.eval_games = eval_games
         self.win_upper = win_upper
         self.win_lower = win_lower
-        self.increment = increment
         self.results = collections.deque(maxlen=eval_games)
-        self.last_adjustment = 0
 
     def _on_step(self) -> bool:
         info = self.locals.get("infos", [{}])[0]
-        # Detect end of game and record result
-        if "final_observation" in info:  # done=True
+        # end-of-episode marker
+        if "final_observation" in info:
             outcome = self.env_ref.board.outcome()
             if outcome is not None:
-                if outcome.winner is True:   # Agent played White and won
+                if outcome.winner is True:
                     self.results.append(1.0)
-                elif outcome.winner is False: # Agent lost
+                elif outcome.winner is False:
                     self.results.append(0.0)
                 else:
-                    self.results.append(0.5)  # Draw
+                    self.results.append(0.5)
 
-            # Check if we should adjust difficulty
             if len(self.results) == self.eval_games:
-                win_rate = np.mean(self.results)
+                win_rate = float(np.mean(self.results))
+                bc = self.env_ref.blunder_chance
+                nd = self.env_ref.engine_nodes if self.env_ref.engine_nodes is not None else 8
+                tt = self.env_ref.think_time if self.env_ref.think_time is not None else 0.0
+
                 if win_rate > self.win_upper:
-                    self.env_ref.think_time += self.increment
-                    print(f"[Curriculum] Win rate {win_rate:.2f} > {self.win_upper:.2f}, increasing think_time to {self.env_ref.think_time:.3f}s")
+                    # Make engine stronger: fewer blunders, more nodes; once no blunders, add time
+                    if bc > 0.0:
+                        new_bc = max(0.0, bc - 0.10)
+                        self.env_ref.set_difficulty(blunder_chance=new_bc)
+                        print(f"[Curriculum] Win {win_rate:.2f} > {self.win_upper:.2f}: blunder_chance {bc:.2f} -> {new_bc:.2f}")
+                    else:
+                        new_tt = min(0.10, tt + 0.02)
+                        self.env_ref.set_difficulty(think_time=new_tt)
+                        print(f"[Curriculum] Win {win_rate:.2f} > {self.win_upper:.2f}: think_time {tt:.2f}s -> {new_tt:.2f}s")
+
+                    new_nd = min(250, nd + 10)
+                    self.env_ref.set_difficulty(engine_nodes=new_nd)
+                    print(f"[Curriculum]             engine_nodes {nd} -> {new_nd}")
+
                     self.results.clear()
-                elif win_rate < self.win_lower and self.env_ref.think_time > self.increment:
-                    self.env_ref.think_time = max(self.increment, self.env_ref.think_time - self.increment)
-                    print(f"[Curriculum] Win rate {win_rate:.2f} < {self.win_lower:.2f}, decreasing think_time to {self.env_ref.think_time:.3f}s")
+
+                elif win_rate < self.win_lower:
+                    # Make engine easier: more blunders, fewer nodes, less time
+                    new_bc = min(0.90, bc + 0.10)
+                    new_nd = max(1, nd - 5)
+                    new_tt = max(0.0, tt - 0.01)
+                    self.env_ref.set_difficulty(blunder_chance=new_bc, engine_nodes=new_nd, think_time=new_tt)
+                    print(f"[Curriculum] Win {win_rate:.2f} < {self.win_lower:.2f}: "
+                          f"blunder_chance {bc:.2f}->{new_bc:.2f}, engine_nodes {nd}->{new_nd}, think_time {tt:.2f}s->{new_tt:.2f}s")
                     self.results.clear()
         return True
 
-# Build mask_fn for legal moves
 def mask_fn(env) -> np.ndarray:
     mask = np.zeros(env.action_space.n, dtype=bool)
     for mv in env.board.legal_moves:
@@ -68,27 +85,26 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Using device:", device)
 
-    # === Start very weak Stockfish ===
+    # Start comically weak: many blunders, barely searches
     base_env = ChessEnv(
         engine_path=r"C:\Tools\Stockfish\stockfish.exe",
-        target_elo=1320,           # minimum supported by your engine
-        think_time=0.02,           # very weak to start
-        nodes=None,                # not limiting by nodes yet
+        target_elo=1320,
+        think_time=0.0,
+        nodes=None,
         randomize_start_color=True,
+        blunder_chance=0.60,
+        engine_nodes=5,
     )
     env = ActionMasker(base_env, mask_fn)
 
     print(f"[train] Using engine path: {base_env.engine_path}")
     print(f"[train] Engine active? {base_env.engine is not None}")
+    print(f"[train] Initial difficulty: blunder_chance={base_env.blunder_chance:.2f}, engine_nodes={base_env.engine_nodes}, think_time={base_env.think_time:.2f}s")
 
     checkpoint_path = "models/chess_ppo_33200000_steps.zip"
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint: {checkpoint_path}")
-        model = MaskablePPO.load(
-            checkpoint_path,
-            env=env,
-            device=device,
-        )
+        model = MaskablePPO.load(checkpoint_path, env=env, device=device)
         print(f"Checkpoint loaded! Current timesteps: {model.num_timesteps}")
     else:
         print(f"Checkpoint not found at {checkpoint_path}! Starting fresh...")
@@ -102,20 +118,9 @@ def main():
         )
         print("New model created! Current timesteps:", model.num_timesteps)
 
-    # Callbacks for logging & checkpoints
     csv_cb  = CSVLoggerCallback()
-    ckpt_cb = CheckpointCallback(
-        save_freq=1_000_000,
-        save_path="models/",
-        name_prefix="chess_ppo"
-    )
-    curriculum_cb = CurriculumCallback(
-        env_ref=base_env,
-        eval_games=200,
-        win_upper=0.65,
-        win_lower=0.35,
-        increment=0.02
-    )
+    ckpt_cb = CheckpointCallback(save_freq=1_000_000, save_path="models/", name_prefix="chess_ppo")
+    curriculum_cb = CurriculumCallback(env_ref=base_env, eval_games=150, win_upper=0.65, win_lower=0.35)
 
     print("Beginning/continuing training from", model.num_timesteps, "steps")
     model.learn(
