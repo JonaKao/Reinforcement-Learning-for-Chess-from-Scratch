@@ -14,3 +14,4 @@ Building a completely and purely Reinforcement Learning approach for Chess. Usin
 This images shows the results of Run16 which included a movement penalty, increased exploration (by raising of the ent_coef) as well as a tweaking of the capture rewards. At 6M randomized openings were intitally introduced to break deadlock of immediate, memorized checkmate. 
 
 ![Reward Curve](TensorBoardData20MRun16.png)
+
