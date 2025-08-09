@@ -19,7 +19,7 @@ from action_mapping import move_to_index
 
 # ======= Curriculum Callback (blunder-first) =======
 class CurriculumCallback(BaseCallback):
-    def __init__(self, env_ref, eval_games=150, win_upper=0.65, win_lower=0.35):
+    def __init__(self, env_ref, eval_games=50, win_upper=0.65, win_lower=0.35):
         super().__init__()
         self.env_ref = env_ref
         self.eval_games = eval_games
@@ -92,8 +92,8 @@ def main():
         think_time=0.0,
         nodes=None,
         randomize_start_color=True,
-        blunder_chance=0.90,
-        engine_nodes=3,
+        blunder_chance=0.95,  # very blunder-prone at start
+        engine_nodes=2, #minimal search
     )
     env = ActionMasker(base_env, mask_fn)
 
