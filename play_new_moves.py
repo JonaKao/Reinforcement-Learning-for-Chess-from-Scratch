@@ -26,9 +26,9 @@ def main():
 
     # 2) load your trained PPO
     model = MaskablePPO.load(
-        "models/chess_ppo_1000000_steps",
+        "models/chess_ppo_28600000_steps",
         env=vec_env,
-        device="cpu"
+        device="cuda"
     )
 
     # 3) grab the raw env for board & legal‐move info

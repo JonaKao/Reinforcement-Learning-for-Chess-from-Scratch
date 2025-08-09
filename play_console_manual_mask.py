@@ -18,7 +18,7 @@ def main():
     vec_env = DummyVecEnv([make_env])
 
     # 2) load trained PPO (no mask argument!)
-    model = MaskablePPO.load("models/chess_ppo_18400000_steps", env=vec_env, device="cpu")
+    model = MaskablePPO.load("models/chess_ppo_28600000_steps", env=vec_env, device="cpu")
 
     # 3) grab the raw env for board & legal‐move info
     raw_env = vec_env.envs[0]
