@@ -1,0 +1,7 @@
+import chess, chess.engine
+path = r"C:\Tools\Stockfish\stockfish.exe"
+eng = chess.engine.SimpleEngine.popen_uci(path)
+board = chess.Board()
+res = eng.play(board, chess.engine.Limit(time=0.1))
+print("Engine move:", res.move.uci())
+eng.quit()

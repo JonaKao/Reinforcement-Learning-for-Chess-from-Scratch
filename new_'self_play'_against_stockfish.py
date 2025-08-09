@@ -14,8 +14,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback
 from callback_logging import CSVLoggerCallback
 import os
 import re
-
-from Chess_Environment import ChessEnv
+from Chess_Environment_Stockfish_Opponent import ChessEnv
 from action_mapping import move_to_index
 
 # Build mask_fn for legal moves
@@ -25,20 +24,24 @@ def mask_fn(env) -> np.ndarray:
         mask[ move_to_index[mv.uci()] ] = True
     return mask
 
-
 def main():
-    # ensure models folder exists
     os.makedirs("models", exist_ok=True)
-
-    # Choose device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Using device:", device)
 
-    # Instantiate and wrap env
-    base_env = ChessEnv()
-    env      = ActionMasker(base_env, mask_fn)
+    # === NEW: play vs Stockfish (approx 1000 Elo) ===
 
-    checkpoint_path = "models/chess_ppo_32900000_steps.zip"
+    base_env = ChessEnv(
+        engine_path="C:\\Tools\\Stockfish\\stockfish.exe",   # <-- change if needed
+        target_elo=1000,           # requested strength (will be clamped internally)
+        think_time=0.05,           # tiny time keeps it weak
+        nodes=None,                # or set nodes=200 instead of think_time
+        random_opening_moves=(8, 10),
+        randomize_start_color=True,
+    )
+    env = ActionMasker(base_env, mask_fn)
+
+    checkpoint_path = "models/chess_ppo_33200000_steps.zip"
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint: {checkpoint_path}")
         model = MaskablePPO.load(
@@ -52,7 +55,7 @@ def main():
         model = MaskablePPO(
             MaskableActorCriticPolicy,
             env,
-            ent_coef=0.02, #wanted to promote more exploration
+            ent_coef=0.02,
             verbose=1,
             tensorboard_log="runs/chess_gpu",
             device=device,
@@ -62,7 +65,7 @@ def main():
     # Callbacks for logging & checkpoints
     csv_cb  = CSVLoggerCallback()
     ckpt_cb = CheckpointCallback(
-        save_freq=100_000,
+        save_freq=1_000_000,
         save_path="models/",
         name_prefix="chess_ppo"
     )
