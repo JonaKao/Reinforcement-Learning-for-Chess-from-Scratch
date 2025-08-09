@@ -37,9 +37,9 @@ def main():
     ap.add_argument("--max_plies", type=int, default=400)
     ap.add_argument("--deterministic", action="store_true",
                     help="Greedy policy instead of sampling.")
-    # Stockfish controls (works if your ChessEnv supports engine args)
-    ap.add_argument("--engine_path", default="stockfish",
-                    help="Path to Stockfish binary or 'stockfish' if on PATH.")
+    # Stockfish controls
+    ap.add_argument("--engine_path", default=r"C:\Tools\Stockfish\stockfish.exe",
+                    help="Full path to Stockfish binary or 'stockfish' if on PATH.")
     ap.add_argument("--elo", type=int, default=1000)
     ap.add_argument("--think_time", type=float, default=0.05,
                     help="Seconds per engine move; use tiny values to weaken.")
@@ -50,16 +50,18 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    # === Env vs Stockfish ===
+    # === Env vs Stockfish (no random openings) ===
     base_env = ChessEnv(
         engine_path=args.engine_path,
         target_elo=args.elo,
         think_time=args.think_time,
         nodes=args.nodes,
-        random_opening_moves=(8, 10),
         randomize_start_color=True,
     )
     env = ActionMasker(base_env, mask_fn)
+
+    print(f"[watch] Using engine path: {base_env.engine_path}")
+    print(f"[watch] Engine active? {base_env.engine is not None}")
 
     print(f"Loading checkpoint: {args.model_path}")
     model = MaskablePPO.load(args.model_path, env=env, device=device)
@@ -68,7 +70,7 @@ def main():
     obs, _ = env.reset()
     ply = 0
 
-    print("\nInitial position (after env.reset() which may include random opening plies):")
+    print("\nInitial position (clean start, no random openings):")
     print(base_env.board)
 
     while True:
