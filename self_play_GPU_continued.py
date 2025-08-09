@@ -15,8 +15,8 @@ from callback_logging import CSVLoggerCallback
 import os
 import re
 
-#from Chess_Environment import ChessEnv
-from action_mapping    import move_to_index
+from Chess_Environment import ChessEnv
+from action_mapping import move_to_index
 
 # Build mask_fn for legal moves
 def mask_fn(env) -> np.ndarray:
