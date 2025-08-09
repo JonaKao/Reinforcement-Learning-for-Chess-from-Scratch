@@ -112,7 +112,7 @@ def main():
     print(f"[train] Engine active? {base_env.engine is not None}")
     print(f"[train] Initial difficulty: blunder_chance={base_env.blunder_chance:.2f}, engine_nodes={base_env.engine_nodes}, think_time={base_env.think_time:.2f}s")
 
-    checkpoint_path = "models/chess_ppo_33200000_steps.zip"
+    checkpoint_path = "models/chess_ppo_35200000_steps.zip"
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint: {checkpoint_path}")
         model = MaskablePPO.load(checkpoint_path, env=env, device=device)
@@ -131,7 +131,7 @@ def main():
 
     csv_cb  = CSVLoggerCallback()
     tb_cb   = TensorboardScalarsCallback(env_ref=base_env, eval_games=50)
-    ckpt_cb = CheckpointCallback(save_freq=1_000_000, save_path="models/", name_prefix="chess_ppo")
+    ckpt_cb = CheckpointCallback(save_freq=500_000, save_path="models/", name_prefix="chess_ppo")
     curriculum_cb = CurriculumCallback(env_ref=base_env, eval_games=150, win_upper=0.65, win_lower=0.35)
 
     print("Beginning/continuing training from", model.num_timesteps, "steps")
