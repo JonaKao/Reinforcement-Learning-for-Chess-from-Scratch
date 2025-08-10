@@ -7,7 +7,6 @@ from gymnasium import spaces
 from action_mapping import index_to_move, move_to_index
 import shutil
 import random
-from typing import Tuple, Optional
 
 PIECE_VALUES = {
     chess.PAWN:   0.01,
@@ -20,18 +19,13 @@ PIECE_VALUES = {
 class ChessEnv(gym.Env):
     def __init__(
         self,
-        engine_path: Optional[str] = r"C:\Tools\Stockfish\stockfish.exe",
-        target_elo: int = 1320,             # Stockfish UCI floor in your setup
-        think_time: Optional[float] = 0.0,   # time limit per move (seconds)
-        nodes: Optional[int] = None,         # legacy throttle (unused if engine_nodes set)
+        engine_path: str | None = r"C:\Tools\Stockfish\stockfish.exe",
+        target_elo: int = 1320,           # honor engine floor
+        think_time: float | None = 0.0,   # start purely node-limited
+        nodes: int | None = None,         # legacy throttle (unused by default)
         randomize_start_color: bool = True,
-        blunder_chance: float = 0.60,        # probability of random legal move
-        engine_nodes: Optional[int] = 5,     # nodes per move if using node limit
-        # NEW: opening randomization & control
-        opening_moves_range: Tuple[int, int] = (4, 10),
-        force_agent_white: bool = False,     # set True to make the agent always start as White for now
-        print_opening_board: bool = False,   # debug: show randomized start position
-        debug_blunder_stats: bool = True,    # print blunder rate per episode at reset()
+        blunder_chance: float = 0.60,     # very blunder-prone at start
+        engine_nodes: int | None = 5,     # tiny search
     ):
         super().__init__()
         self.board = chess.Board()
@@ -49,17 +43,7 @@ class ChessEnv(gym.Env):
 
         # Handicap controls
         self.blunder_chance = float(np.clip(blunder_chance, 0.0, 1.0))
-        self.engine_nodes = None if engine_nodes is None else max(1, int(engine_nodes))
-
-        # NEW: curriculum/opening controls
-        self.opening_moves_range = opening_moves_range
-        self.force_agent_white = force_agent_white
-        self.print_opening_board = print_opening_board
-        self.debug_blunder_stats = debug_blunder_stats
-
-        # NEW: debug counters to verify blunder rate actually used
-        self._dbg_blunders = 0
-        self._dbg_moves = 0
+        self.engine_nodes = engine_nodes
 
         if self.engine_path is not None:
             resolved = shutil.which(self.engine_path) or self.engine_path
@@ -76,18 +60,11 @@ class ChessEnv(gym.Env):
                 elo = int(max(min(self.target_elo, max_elo), min_elo))
                 self.engine.configure({"UCI_Elo": elo})
                 self.engine.configure({"Skill Level": 0})
-                # Optional: print what engine accepted
-                try:
-                    eff = self.engine.options.get("UCI_Elo", None)
-                    if eff is not None:
-                        print(f"[Engine] requested Elo={self.target_elo}, effective Elo={eff.value}")
-                except Exception:
-                    pass
             except Exception as e:
                 print(f"[ChessEnv] ERROR: Failed to start engine at '{resolved}': {e}. Running without opponent.")
                 self.engine = None
 
-    # ---- Live difficulty setters (already had set_difficulty, now with set_elo) ----
+    # ---- New: external difficulty setter ----
     def set_difficulty(self, *, blunder_chance=None, engine_nodes=None, think_time=None):
         if blunder_chance is not None:
             self.blunder_chance = float(np.clip(blunder_chance, 0.0, 1.0))
@@ -96,20 +73,6 @@ class ChessEnv(gym.Env):
         if think_time is not None:
             self.think_time = max(0.0, float(think_time))
 
-    def set_elo(self, elo: int):
-        """Sets Stockfish UCI_Elo respecting the engine floor (>=1320)."""
-        if self.engine is None:
-            return
-        elo = int(max(min(elo, 3600), 1320))
-        self.target_elo = elo
-        try:
-            self.engine.configure({"UCI_Elo": elo})
-            eff = self.engine.options.get("UCI_Elo", None)
-            if eff is not None:
-                print(f"[Engine] set Elo to {elo}, effective={eff.value}")
-        except Exception as e:
-            print(f"[Engine] Failed to set Elo: {e}")
-
     @property
     def action_mask(self):
         mask = np.zeros(self.action_space.n, dtype=bool)
@@ -117,60 +80,24 @@ class ChessEnv(gym.Env):
             mask[move_to_index.get(mv.uci(), 0)] = True
         return mask
 
-    def _randomize_opening(self):
-        """Apply N random legal moves to diversify starting positions."""
-        lo, hi = self.opening_moves_range
-        if hi <= 0 or hi < lo:
-            return  # disabled or misconfigured range
-        num_open = random.randint(lo, hi)
-        for _ in range(num_open):
-            if self.board.is_game_over():
-                break
-            legal = list(self.board.legal_moves)
-            if not legal:
-                break
-            self.board.push(random.choice(legal))
-        if self.print_opening_board:
-            print("=== Randomized opening position ===")
-            print(self.board)
-
     def reset(self, *, seed=None, options=None):
-        # (1) Print last-episode blunder stats
-        if self.debug_blunder_stats:
-            if self._dbg_moves > 0:
-                print(f"[DBG] engine blunder% last episode: {self._dbg_blunders / self._dbg_moves:.2f} "
-                      f"({self._dbg_blunders}/{self._dbg_moves})")
-            self._dbg_blunders = 0
-            self._dbg_moves = 0
-
         super().reset(seed=seed)
         self.board.reset()
+        if self.randomize_start_color:
+            if np.random.rand() < 0.5:
+                self.board.turn = chess.BLACK
+                self.starting_color = "black"
+            else:
+                self.board.turn = chess.WHITE
+                self.starting_color = "white"
+        else:
+            self.starting_color = "white"
         self.done = False
 
-        # (2) Who starts?
-        if self.force_agent_white:
-            self.board.turn = chess.WHITE
-            self.starting_color = "white"
-        else:
-            if self.randomize_start_color:
-                if np.random.rand() < 0.5:
-                    self.board.turn = chess.BLACK
-                    self.starting_color = "black"
-                else:
-                    self.board.turn = chess.WHITE
-                    self.starting_color = "white"
-            else:
-                self.starting_color = "white"
-
-        # (3) Randomize openings here as well (was missing in your Stockfish env)
-        self._randomize_opening()
-
-        # (4) If after opening randomization it's the engine to move first, let it reply once
+        # If engine exists and it's their turn, reply once so agent starts
         if self.engine is not None and not self.board.is_game_over():
             agent_is_white = self.starting_color == "white"
-            engine_to_move_first = (agent_is_white and self.board.turn == chess.BLACK) or \
-                                   ((not agent_is_white) and self.board.turn == chess.WHITE)
-            if engine_to_move_first:
+            if (agent_is_white and self.board.turn == chess.BLACK) or (not agent_is_white and self.board.turn == chess.WHITE):
                 self._engine_reply(apply_reward=False)
 
         print(f"[ChessEnv.reset()] Starting color: {self.starting_color}")
@@ -193,7 +120,7 @@ class ChessEnv(gym.Env):
             return 2.5 if winner_is_white == self._agent_was_white_last_move else -1.0
         if (self.board.is_stalemate() or self.board.is_insufficient_material()
             or self.board.can_claim_fifty_moves() or self.board.can_claim_threefold_repetition()):
-            return -0.5
+            return -1.0
         return 0.0
 
     def _engine_reply(self, apply_reward: bool = True):
@@ -202,12 +129,8 @@ class ChessEnv(gym.Env):
 
         pre_board = self.board.copy()
 
-        # Count engine move for blunder stats
-        self._dbg_moves += 1
-
         # Handicap 1: random blunders
         if random.random() < self.blunder_chance:
-            self._dbg_blunders += 1
             legal = list(self.board.legal_moves)
             if not legal:
                 return 0.0
@@ -235,7 +158,6 @@ class ChessEnv(gym.Env):
 
         reward = 0.0
         if opp_captured:
-            # Opponent (engine) captured our piece → negative reward to the agent
             reward -= PIECE_VALUES.get(opp_captured.piece_type, 0.0)
 
         if self.board.is_game_over():
@@ -259,11 +181,10 @@ class ChessEnv(gym.Env):
             return self._get_obs(), -1.0, True, False, {}
 
         self._agent_was_white_last_move = self.board.turn == chess.WHITE
-
         captured_piece = self.board.piece_at(move.to_square)
         self.board.push(move)
 
-        reward = -0.001  # small per-move penalty
+        reward = -0.002
         if captured_piece:
             reward += PIECE_VALUES.get(captured_piece.piece_type, 0.0)
 
