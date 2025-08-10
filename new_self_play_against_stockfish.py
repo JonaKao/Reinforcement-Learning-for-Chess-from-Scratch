@@ -12,14 +12,17 @@ from sb3_contrib.common.wrappers.action_masker import ActionMasker
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
+
+# ⬇️ We now import the TensorBoard scalars callback you added in callback_logging.py
 from callback_logging import CSVLoggerCallback, TensorboardScalarsCallback
+
 import os
 from Chess_Environment_Stockfish_Opponent import ChessEnv
 from action_mapping import move_to_index
 
-# ======= Curriculum Callback (blunder-first) =======
+# ======= Curriculum Callback (fixed + TB event logging) =======
 class CurriculumCallback(BaseCallback):
-    def __init__(self, env_ref, eval_games=50, win_upper=0.65, win_lower=0.35):
+    def __init__(self, env_ref, eval_games=150, win_upper=0.65, win_lower=0.35):
         super().__init__()
         self.env_ref = env_ref
         self.eval_games = eval_games
@@ -46,11 +49,11 @@ class CurriculumCallback(BaseCallback):
                 nd = self.env_ref.engine_nodes if self.env_ref.engine_nodes is not None else 8
                 tt = self.env_ref.think_time if self.env_ref.think_time is not None else 0.0
 
+                # record win_rate at adjustment points
                 self.logger.record("custom/win_rate", win_rate)
 
-
                 if win_rate > self.win_upper:
-                    # Make engine stronger: fewer blunders, more nodes; once no blunders, add time
+                    # Make engine stronger: fewer blunders / more nodes; once no blunders, add time
                     if bc > 0.0:
                         new_bc = max(0.0, bc - 0.10)
                         self.env_ref.set_difficulty(blunder_chance=new_bc)
@@ -65,9 +68,11 @@ class CurriculumCallback(BaseCallback):
                     new_nd = min(250, nd + 10)
                     self.env_ref.set_difficulty(engine_nodes=new_nd)
                     event_msg += f", engine_nodes {nd} -> {new_nd}"
-                    self.logger.record_text("custom/curriculum_event", event_msg)
+                    try:
+                        self.logger.record_text("custom/curriculum_event", event_msg)
+                    except Exception:
+                        pass
                     print(f"[Curriculum]             engine_nodes {nd} -> {new_nd}")
-
                     self.results.clear()
 
                 elif win_rate < self.win_lower:
@@ -76,12 +81,13 @@ class CurriculumCallback(BaseCallback):
                     new_nd = max(1, nd - 5)
                     new_tt = max(0.0, tt - 0.01)
                     self.env_ref.set_difficulty(blunder_chance=new_bc, engine_nodes=new_nd, think_time=new_tt)
-                    print(f"[Curriculum] Win {win_rate:.2f} < {self.win_lower:.2f}: "
-                          f"blunder_chance {bc:.2f}->{new_bc:.2f}, engine_nodes {nd}->{new_nd}, think_time {tt:.2f}s->{new_tt:.2f}s")
-                    
-                    self.logger.record_text("custom/curriculum_event", event_msg)
+                    event_msg = (f"Win {win_rate:.2f}↓: blunder_chance {bc:.2f}->{new_bc:.2f}, "
+                                 f"engine_nodes {nd}->{new_nd}, think_time {tt:.2f}s->{new_tt:.2f}s")
+                    try:
+                        self.logger.record_text("custom/curriculum_event", event_msg)
+                    except Exception:
+                        pass
                     print(f"[Curriculum] {event_msg}")
-
                     self.results.clear()
         return True
 
@@ -96,7 +102,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Using device:", device)
 
-    # Start comically weak: many blunders, barely searches
+    # Start VERY weak: many blunders, minimal search
     base_env = ChessEnv(
         engine_path=r"C:\Tools\Stockfish\stockfish.exe",
         target_elo=1320,
@@ -104,7 +110,7 @@ def main():
         nodes=None,
         randomize_start_color=True,
         blunder_chance=0.95,  # very blunder-prone at start
-        engine_nodes=2, #minimal search
+        engine_nodes=2,       # minimal search
     )
     env = ActionMasker(base_env, mask_fn)
 
@@ -112,7 +118,7 @@ def main():
     print(f"[train] Engine active? {base_env.engine is not None}")
     print(f"[train] Initial difficulty: blunder_chance={base_env.blunder_chance:.2f}, engine_nodes={base_env.engine_nodes}, think_time={base_env.think_time:.2f}s")
 
-    checkpoint_path = "models/chess_ppo_37200000_steps.zip"
+    checkpoint_path = "models/chess_ppo_33200000_steps.zip"
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint: {checkpoint_path}")
         model = MaskablePPO.load(checkpoint_path, env=env, device=device)
@@ -130,8 +136,8 @@ def main():
         print("New model created! Current timesteps:", model.num_timesteps)
 
     csv_cb  = CSVLoggerCallback()
-    tb_cb   = TensorboardScalarsCallback(env_ref=base_env, eval_games=50)
-    ckpt_cb = CheckpointCallback(save_freq=500_000, save_path="models/", name_prefix="chess_ppo")
+    tb_cb   = TensorboardScalarsCallback(env_ref=base_env, eval_games=50)  # logs win_rate + difficulty scalars
+    ckpt_cb = CheckpointCallback(save_freq=1_000_000, save_path="models/", name_prefix="chess_ppo")
     curriculum_cb = CurriculumCallback(env_ref=base_env, eval_games=150, win_upper=0.65, win_lower=0.35)
 
     print("Beginning/continuing training from", model.num_timesteps, "steps")
