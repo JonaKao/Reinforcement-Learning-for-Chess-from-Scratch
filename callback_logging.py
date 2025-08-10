@@ -38,27 +38,27 @@ class TensorboardScalarsCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [{}])
+
+    # Always record current difficulty knobs each step so they show up immediately
+        self.logger.record("custom/blunder_chance", float(self.env_ref.blunder_chance))
+        self.logger.record("custom/engine_nodes", float(self.env_ref.engine_nodes or 0))
+        self.logger.record("custom/think_time", float(self.env_ref.think_time or 0.0))
+
         if not infos or not isinstance(infos, (list, tuple)):
             return True
         info0 = infos[0] or {}
 
-        # Episode ended?
+    # Episode ended?
         if "final_observation" in info0 or "episode" in info0:
-            # Prefer a real chess outcome; if None (illegal move/trunc), count as loss
+        # Prefer a real chess outcome; if None (illegal move/trunc), count as loss
             outcome = self.env_ref.board.outcome(claim_draw=True)
             if outcome is None:
                 result = 0.0
             else:
                 result = 1.0 if outcome.winner is True else (0.5 if outcome.winner is None else 0.0)
 
-            # record last result and rolling win rate
             self.window.append(result)
             self.logger.record("custom/last_result", float(result))
             self.logger.record("custom/win_rate", float(np.mean(self.window)))
-
-            # record opponent difficulty knobs
-            self.logger.record("custom/blunder_chance", float(self.env_ref.blunder_chance))
-            self.logger.record("custom/engine_nodes", float(self.env_ref.engine_nodes or 0))
-            self.logger.record("custom/think_time", float(self.env_ref.think_time or 0.0))
 
         return True

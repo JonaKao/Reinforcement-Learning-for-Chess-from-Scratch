@@ -112,7 +112,7 @@ def main():
     print(f"[train] Engine active? {base_env.engine is not None}")
     print(f"[train] Initial difficulty: blunder_chance={base_env.blunder_chance:.2f}, engine_nodes={base_env.engine_nodes}, think_time={base_env.think_time:.2f}s")
 
-    checkpoint_path = "models/chess_ppo_35200000_steps.zip"
+    checkpoint_path = "models/chess_ppo_37200000_steps.zip"
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint: {checkpoint_path}")
         model = MaskablePPO.load(checkpoint_path, env=env, device=device)
